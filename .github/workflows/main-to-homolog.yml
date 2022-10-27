@@ -1,0 +1,71 @@
+nome : MainToHomolog
+
+em :
+  empurre :
+    ramos :
+      - ' principal '
+empregos :
+  construir :
+    run-on : ubuntu-latest
+    ambiente : homólogo
+
+    ambiente :
+      AWS_REGION : ${{ secrets.AWS_REGION }}
+      BUNDLE_NAME : ${{ secrets.BUNDLE_NAME }}
+      EB_VERSION : dscatalog_v${{ github.sha }}
+      EB_VERSION_KEY : ${{ github.sha }}/${{ secrets.BUNDLE_NAME }}
+      EB_BUCKET : ${{ secrets.EB_BUCKET }}
+      EB_APP : ${{ secrets.EB_APP }}
+      EB_ENV : ${{ secrets.EB_ENV }}
+
+    passos :
+      - usa : actions/checkout@v2
+      - usa : nelonoel/branch-name@v1.0.1
+
+      - usa : actions/setup-java@v2
+        com :
+          distribuição : ' adote '  # Veja 'Distribuições suportadas' para opções disponíveis
+          java-version : ' 11 '
+      - executar : java -versão
+
+      - nome : pacotes Cache Maven
+        usa : actions/cache@v2
+        com :
+          caminho : ~/.m2
+          key : ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          chaves de restauração : ${{ runner.os }}-m2
+
+      - name : Compilar o pacote Maven
+        execute : mvn --batch-mode --update-snapshots package
+        diretório de trabalho : backend
+        ambiente :
+          MAVEN_OPTS : " -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn "
+
+      - name : Configure as credenciais da AWS
+        usa : aws-actions/configure-aws-credentials@v1
+        com :
+          aws-access-key-id : ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key : ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region : ${{ env.AWS_REGION }}
+      - name : Verifique a autenticação da AWS
+        run : aws sts get-caller-identity
+
+      - nome : Echo versão para S3
+        execute : echo aws s3 cp --quiet ./target/$BUNDLE_NAME s3://$EB_BUCKET/$EB_VERSION_KEY
+        diretório de trabalho : backend
+
+      - name : Copie a versão para S3
+        execute : aws s3 cp --quiet ./target/$BUNDLE_NAME s3://$EB_BUCKET/$EB_VERSION_KEY
+        diretório de trabalho : backend
+
+      - name : Criar versão do aplicativo EB
+        execute : aws elasticbeanstalk create-application-version --application-name $EB_APP --version-label "$EB_VERSION" --source-bundle "S3Bucket=$EB_BUCKET,S3Key=$EB_VERSION_KEY"
+        diretório de trabalho : backend
+        ambiente :
+          EB_VERSION_KEY : ${{ github.sha }}/${{ secrets.BUNDLE_NAME }}
+
+      - name : Atualizar o ambiente Elastic Beanstalk
+        execute :   aws elasticbeanstalk update-environment --application-name $EB_APP --environment-name "$EB_ENV" --version-label "$EB_VERSION"
+        diretório de trabalho : backend
+
+      - run : echo "feito principal para homólogo"
